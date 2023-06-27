@@ -1,0 +1,204 @@
+
+#include <Servo.h>
+#include "SoftwareSerial.h";
+#include <LiquidCrystal.h>
+#include <TinyGPS++.h>  
+
+SoftwareSerial ss(8,9);
+LiquidCrystal lcd(2, 3, 4, 5, 11, 12);
+
+SoftwareSerial esp(6, 7);// RX, TX
+
+float latt;
+float lang;
+String getStr;
+TinyGPSPlus gps;
+
+
+String ssid ="pandi";  //  Replace your Hotspot Username
+String password="9629507006"; //  Replace your Hotspot Password
+
+
+boolean DEBUG = true;
+
+Servo myservo;  // create servo object to control a servo
+int pos = 0; 
+int trig = A0;
+int echo = A1;
+String loc;
+long int duration;
+int distance;
+String data;
+String uri;
+String server = "www.tamilgurukulam.com";
+
+void showResponse(int waitTime) {
+
+  long t = millis();
+  char c;
+  while (t + waitTime > millis())
+  {
+    if (esp.available())
+    {
+    c = esp.read();
+      Serial.print(c);
+    }
+  }
+}
+void st()
+{
+  for(int i=0;i<100;i++)
+  {
+  loca();
+  }
+}
+
+void loca()
+{
+    while (Serial.available() > 0){
+    gps.encode(Serial.read());
+    if (gps.location.isUpdated()){
+  String latt=  String(gps.location.lat(), 4);
+   String lang= String(gps.location.lng(), 4);
+    }
+    Serial.print(lang);
+    Serial.println(latt);
+  }
+
+}
+void setup() {
+ myservo.attach(A2);  // attaches the servo on pin 9 to the servo object
+   pinMode(trig, OUTPUT); 
+pinMode(echo, INPUT); 
+ pinMode(A3, INPUT);
+ myservo.write(pos);
+   ss.begin(9600);
+   lcd.begin(16,2);
+   lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("Smart Dustbin With");
+  lcd.setCursor(0,1);
+  lcd.print("IOT Notofication");
+  delay(3000);
+  lcd.clear();
+lcd.setCursor(0,0);
+lcd.print("Connecting WIFI");
+ Serial.begin(115200);
+ // esp.print("AT+UART_CUR=9600,8,1,0,0");    // Enable this line to set esp8266 serial speed to 9600 bps
+ showResponse(1000);
+  esp.begin(115200);  // enable software serial
+showResponse(5000);
+  esp.println("AT+RST");         // Enable this line to reset the module;
+  showResponse(5000);
+ esp.println("AT");   // set esp8266 as client
+  showResponse(5000);
+  esp.println("AT+CWMODE=1");   // set esp8266 as client
+  showResponse(5000);
+  esp.println("AT+CWJAP=\"" + ssid + "\",\"" + password + "\""); // set your home router SSID and password
+  showResponse(5000);
+  if (DEBUG)  Serial.println("Setup completed");
+   ss.begin(9600);
+  lcd.clear();
+}
+
+void loop() {
+  int but = digitalRead(A3);
+  Serial.println(but);
+  
+  if(but == HIGH)
+  {
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("Dustbin Opened");
+     for (pos = 0; pos <= 120; pos += 5) { // goes from 0 degrees to 180 degrees
+    // in steps of 1 degree
+    myservo.write(pos);              // tell servo to go to position in variable 'pos'
+    delay(50);                       // waits 15ms for the servo to reach the position
+  }
+  delay(3000);
+      lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("Dustbin Closed");
+  for (pos = 120; pos >= 0; pos -= 5) { // goes from 180 degrees to 0 degrees
+    myservo.write(pos);              // tell servo to go to position in variable 'pos'
+    delay(50);                       // waits 15ms for the servo to reach the position
+  }
+  }
+  digitalWrite(trig, LOW);
+delayMicroseconds(2);
+digitalWrite(trig, HIGH);
+delayMicroseconds(10);
+digitalWrite(trig, LOW);
+duration = pulseIn(echo, HIGH);
+distance= duration*0.034/2;
+Serial.println("Distance ="+String(distance));
+int dust=22-distance;
+lcd.clear();
+lcd.setCursor(0,0);
+lcd.print("Dust = ");
+lcd.print(dust);
+if(distance < 5)
+{
+  Serial.println("Dustbin Filled");
+  lcd.clear();
+lcd.setCursor(0,0);
+lcd.print("Dustbin Filled ");
+lcd.setCursor(0,0);
+lcd.print(distance);
+for(int i=0;i<=5;i++)
+{
+  post();
+  delay(1000);
+}
+}
+delay(100);
+}
+
+void post () {
+  if(latt > 0)
+  {
+    loc=String(latt)+",N"+String(lang)+"E";
+  }
+  else
+  {
+ loc="8.7924N,77.7095E";
+  }
+lcd.setCursor(0,1);
+lcd.print("Uploading");
+String uri ="/iotmakers/sankar_upload.php?distance=Dustbin_Filled&data2="+loc;  // prepare GET string
+Serial.println(uri);
+esp.println("AT+CIPSTART=\"TCP\",\"" + server + "\",80");//start a TCP connection.
+if( esp.find("OK")) {
+Serial.println("TCP connection ready");
+}
+
+delay(1000);
+
+String postRequest =
+"POST " + uri + " HTTP/1.0\r\n" +
+"Host: " + server + "\r\n" +
+"Accept: *" + "/" + "*\r\n" +
+"Content-Length: " + data.length() + "\r\n" +
+"Content-Type: application/x-www-form-urlencoded\r\n" +
+"\r\n" + data;
+delay(1000);
+String sendCmd = "AT+CIPSEND=";//determine the number of caracters to be sent.
+esp.print(sendCmd);
+delay(1000);
+esp.println(postRequest.length() );
+delay(500);
+
+if(esp.find(">")) { Serial.println("Sending.."); esp.print(postRequest);
+delay(1000);
+if( esp.find("SEND OK")) { Serial.println("Packet sent");
+delay(1000);
+while (esp.available()) {
+String tmpResp = esp.readString();
+Serial.println(tmpResp);
+};
+delay(1000);
+esp.println("AT+CIPCLOSE");
+delay(1000);
+}
+
+}}
